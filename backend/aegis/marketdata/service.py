@@ -132,7 +132,8 @@ class MarketDataService(MarketDataReader):
         self.last_rest_ok = time.time()
         await self.bus.set_tickers({s: self.tickers[s] for s in fresh})
         self.universe = select_universe(
-            self.tickers, self.settings.quote_asset, float(self.settings.min_quote_volume_24h), self.settings.universe_max_symbols
+            self.tickers, self.settings.quote_asset, float(self.settings.min_quote_volume_24h), self.settings.universe_max_symbols,
+            frozenset(b.strip().upper() for b in self.settings.universe_exclude.split(",") if b.strip()),
         )
         await self.bus.cache_set(UNIVERSE_KEY, self.universe, ttl=3600)
         return len(fresh)

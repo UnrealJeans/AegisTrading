@@ -6,7 +6,7 @@ from typing import Any
 import pandas as pd
 from pydantic import BaseModel
 
-STABLE_BASES = {"USDC", "FDUSD", "TUSD", "USDP", "DAI", "BUSD", "EUR", "EURI", "AEUR", "USD1", "XUSD", "PAXG", "WBTC", "WBETH", "BFUSD", "USDE"}
+STABLE_BASES = {"USDC", "FDUSD", "TUSD", "USDP", "DAI", "BUSD", "EUR", "EURI", "AEUR", "USD1", "XUSD", "PAXG", "WBTC", "WBETH", "BFUSD", "USDE", "RLUSD", "XAUT", "PYUSD", "USDS"}
 LEVERAGED_SUFFIXES = ("UP", "DOWN", "BULL", "BEAR")
 
 
@@ -32,10 +32,11 @@ def eligible_symbol(symbol: str, quote: str) -> bool:
     return not any(base.endswith(s) and len(base) > len(s) + 2 for s in LEVERAGED_SUFFIXES)
 
 
-def select_universe(tickers: dict[str, dict[str, Any]], quote: str, min_quote_volume: float, max_symbols: int) -> list[str]:
+def select_universe(tickers: dict[str, dict[str, Any]], quote: str, min_quote_volume: float, max_symbols: int,
+                    exclude_bases: frozenset[str] = frozenset()) -> list[str]:
     rows = [
         (s, float(t.get("quote_volume") or 0.0)) for s, t in tickers.items()
-        if eligible_symbol(s, quote) and float(t.get("quote_volume") or 0.0) >= min_quote_volume and t.get("last")
+        if eligible_symbol(s, quote) and s.split("/")[0] not in exclude_bases and float(t.get("quote_volume") or 0.0) >= min_quote_volume and t.get("last")
     ]
     rows.sort(key=lambda x: -x[1])
     return [s for s, _ in rows[:max_symbols]]

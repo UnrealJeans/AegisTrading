@@ -154,4 +154,5 @@ with a read-only filesystem and no capabilities; only the dashboard port is publ
 | Paper fills are optimistic (no order-book depth) | configurable slippage/fees; order size capped at 0.1% of 24h volume |
 | News coverage is limited to RSS + optional CryptoPanic; no direct social feed | agents are told data quality; missing data lowers confidence, never invents |
 | Single VPS, single database | nightly dumps; restore script; no HA |
-| Binance may geo-block a VPS region | endpoints are configurable (`BINANCE_REST_URL`, `BINANCE_WS_URL`) |
+| Binance may geo-block a VPS region (HTTP 451) | public data endpoints are configurable (`BINANCE_REST_URL`, `BINANCE_WS_URL`); the testnet has no mirror, so testnet mode needs a region Binance serves |
+| The volume-ranked universe can include tokenised stocks or other non-crypto listings | `UNIVERSE_EXCLUDE` removes base assets; stablecoins and leveraged tokens are filtered by default |

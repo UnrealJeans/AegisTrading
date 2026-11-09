@@ -80,6 +80,7 @@ class Settings(BaseSettings):
 
     universe_max_symbols: int = 40          # top-N by quote volume tracked in depth
     min_quote_volume_24h: Decimal = Decimal("5000000")
+    universe_exclude: str = ""             # extra base assets to ignore, e.g. tokenised stocks: "NVDAB,SOXLB"
     candle_timeframes: str = "15m,1h,4h"
     stale_ticker_seconds: int = 30
 

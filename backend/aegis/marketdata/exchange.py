@@ -43,6 +43,7 @@ def build_ccxt_binance(settings: Settings, *, source: str, api_key: str = "", se
             "warnOnFetchOpenOrdersWithoutSymbol": False,
         },
     })
+    ex.aiohttp_trust_env = True  # honour HTTP(S)_PROXY / NO_PROXY when the host routes egress through a proxy
     if source == "binance_testnet":
         ex.set_sandbox_mode(True)
         default = "https://testnet.binance.vision"
