@@ -242,7 +242,7 @@ def build_graph(deps: Deps) -> Any:
             await s.flush()
             pid = row.id
         await _message(ctx.run_id, "analyst", "skeptic", "trade_proposal", symbol,
-                       f"{p.side} {symbol} entry {p.entry_price} stop {p.stop_loss} target {p.take_profit} (R/R {p.risk_reward})", out, bus)
+                       f"{p.side} {symbol} entry {p.entry_price:.8g} stop {p.stop_loss:.8g} target {p.take_profit:.8g} (R/R {p.risk_reward:.2f})", out, bus)
         return {"analyst": out, "proposal_id": pid, "trace": _step("analyst", t0, symbol=symbol, action=p.side, proposal_id=pid)}
 
     def after_analyst(state: CycleState) -> str:

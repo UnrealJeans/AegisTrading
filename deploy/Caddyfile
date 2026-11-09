@@ -1,0 +1,6 @@
+# Automatic HTTPS (Let's Encrypt) for the dashboard. Requires DOMAIN in .env and DNS pointing at this VPS.
+{$DOMAIN} {
+    encode zstd gzip
+    header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    reverse_proxy frontend:80
+}

@@ -1,0 +1,158 @@
+# Aegis Trading — production stack for a single Ubuntu VPS (2 vCPU / 4 GB RAM / 40 GB SSD).
+# Only the dashboard port is published, and by default only on 127.0.0.1.
+name: aegis
+
+x-app: &app
+  build: ./backend
+  image: aegis-backend:latest
+  restart: unless-stopped
+  env_file: .env
+  environment: &app-env
+    DATABASE_URL: postgresql+asyncpg://aegis:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/aegis
+    REDIS_URL: redis://redis:6379/0
+    ENVIRONMENT: production
+    TRUST_PROXY_HEADERS: "true"
+  depends_on:
+    postgres: { condition: service_healthy }
+    redis: { condition: service_healthy }
+    migrate: { condition: service_completed_successfully }
+  networks: [internal]
+  stop_grace_period: 30s
+  security_opt: ["no-new-privileges:true"]
+  cap_drop: [ALL]
+  read_only: true
+  tmpfs: [/tmp]
+  logging: &logging
+    driver: json-file
+    options: { max-size: "20m", max-file: "5" }
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: aegis
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: aegis
+    command: ["postgres", "-c", "shared_buffers=256MB", "-c", "max_connections=60", "-c", "effective_cache_size=768MB"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aegis -d aegis"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [internal]
+    mem_limit: 900m
+    stop_grace_period: 60s
+    logging: *logging
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # cache/pub-sub only: everything durable lives in PostgreSQL, so no persistence and a hard memory cap
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "192mb", "--maxmemory-policy", "volatile-lru"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    networks: [internal]
+    mem_limit: 256m
+    logging: *logging
+
+  migrate:
+    <<: *app
+    restart: "no"
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  backend:
+    <<: *app
+    command: ["python", "-m", "aegis.services.api"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/ready', timeout=4).status == 200 else 1)"]
+      interval: 20s
+      timeout: 6s
+      retries: 5
+      start_period: 20s
+    mem_limit: 400m
+
+  worker:            # market data (WebSocket + REST), candle history, news, staleness detection, notifications
+    <<: *app
+    command: ["python", "-m", "aegis.services.worker"]
+    healthcheck: &hb
+      test: ["CMD", "python", "-m", "aegis.services.healthcheck", "worker"]
+      interval: 30s
+      timeout: 10s
+      retries: 4
+      start_period: 60s
+    mem_limit: 600m
+
+  orchestrator:      # LangGraph agent orchestration (the only service that calls LLM APIs)
+    <<: *app
+    command: ["python", "-m", "aegis.services.orchestrator"]
+    healthcheck:
+      <<: *hb
+      test: ["CMD", "python", "-m", "aegis.services.healthcheck", "orchestrator"]
+    mem_limit: 500m
+
+  trading-engine:    # the only service that sends orders; exactly one replica
+    <<: *app
+    command: ["python", "-m", "aegis.services.engine"]
+    healthcheck:
+      <<: *hb
+      test: ["CMD", "python", "-m", "aegis.services.healthcheck", "trading-engine"]
+    mem_limit: 400m
+
+  frontend:
+    build: ./frontend
+    image: aegis-frontend:latest
+    restart: unless-stopped
+    depends_on:
+      backend: { condition: service_healthy }
+    ports: ["${DASHBOARD_BIND:-127.0.0.1}:${DASHBOARD_PORT:-8080}:80"]
+    networks: [internal]
+    mem_limit: 96m
+    logging: *logging
+
+  backup:            # nightly pg_dump with retention; restore with deploy/restore.sh
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
+      BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-86400}
+    entrypoint: ["/bin/sh", "/backup.sh"]
+    volumes:
+      - ./deploy/backup.sh:/backup.sh:ro
+      - ./backups:/backups
+    depends_on:
+      postgres: { condition: service_healthy }
+    networks: [internal]
+    mem_limit: 128m
+    logging: *logging
+
+  caddy:             # optional HTTPS front door:  docker compose --profile tls up -d
+    profiles: [tls]
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: [frontend]
+    networks: [internal]
+    mem_limit: 96m
+    logging: *logging
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:
+
+networks:
+  internal:
